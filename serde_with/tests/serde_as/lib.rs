@@ -679,6 +679,78 @@ fn test_vec_skip_error() {
     );
 }
 
+macro_rules! define_vec_skip_error_non_human_readable_test {
+    ($name:ident, $ser_fn:path, $de_fn:path) => {
+        #[test]
+        fn $name() {
+            #[serde_as]
+            #[derive(Debug, PartialEq, ::serde::Deserialize, ::serde::Serialize)]
+            struct S {
+                tag: String,
+                #[serde_as(as = "::serde_with::VecSkipError<_>")]
+                values: Vec<u8>,
+            }
+
+            // Sanity test - happy flow deserialization is working.
+            let buf = $ser_fn(&S {
+                tag: "round-trip".into(),
+                values: vec![0, 1],
+            })
+            .unwrap();
+
+            let round_tripped: S = $de_fn(&buf).unwrap();
+            assert_eq!(
+                S {
+                    tag: "round-trip".into(),
+                    values: vec![0, 1],
+                },
+                round_tripped,
+                "Deserialization differs from expected value."
+            );
+        }
+    };
+}
+
+define_vec_skip_error_non_human_readable_test!(
+    test_vec_skip_error_bincode_1,
+    ::bincode_1::serialize,
+    ::bincode_1::deserialize
+);
+
+fn bincode_2_serialize<T>(value: &T) -> Result<Vec<u8>, Box<bincode_2::error::EncodeError>>
+where
+    T: serde::Serialize,
+{
+    let config = bincode_2::config::legacy();
+    let x = bincode_2::serde::encode_to_vec(value, config)?;
+    Ok(x)
+}
+
+fn bincode_2_deserialize<T>(slice: &[u8]) -> Result<T, Box<bincode_2::error::DecodeError>>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let config = bincode_2::config::legacy();
+    let (t, _) = bincode_2::serde::decode_from_slice(slice, config)?;
+    Ok(t)
+}
+
+define_vec_skip_error_non_human_readable_test!(
+    test_vec_skip_error_bincode_2,
+    bincode_2_serialize,
+    bincode_2_deserialize
+);
+define_vec_skip_error_non_human_readable_test!(
+    test_vec_skip_error_bitcode,
+    ::bitcode::serialize,
+    ::bitcode::deserialize
+);
+define_vec_skip_error_non_human_readable_test!(
+    test_vec_skip_error_postcard,
+    ::postcard::to_stdvec,
+    ::postcard::from_bytes
+);
+
 #[test]
 fn test_map_skip_error_btreemap() {
     use serde_with::MapSkipError;
