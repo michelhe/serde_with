@@ -9,6 +9,10 @@ use indexmap_1::IndexMap;
 #[cfg(feature = "indexmap_2")]
 use indexmap_2::IndexMap as IndexMap2;
 
+/// Actual implementation of [`VecSkipError`](crate::VecSkipError)
+/// Assumes that the deserializer is human-readabl.
+struct _VecSkipError<T>(PhantomData<T>);
+
 enum GoodOrError<T, TAs> {
     Good(T),
     // Only here to consume the TAs generic
@@ -38,7 +42,7 @@ where
     }
 }
 
-impl<'de, T, U> DeserializeAs<'de, Vec<T>> for VecSkipError<U>
+impl<'de, T, U> DeserializeAs<'de, Vec<T>> for _VecSkipError<U>
 where
     U: DeserializeAs<'de, T>,
 {
@@ -83,6 +87,23 @@ where
     }
 }
 
+impl<'de, T, U> DeserializeAs<'de, Vec<T>> for VecSkipError<U>
+where
+    U: DeserializeAs<'de, T>,
+    T: Deserialize<'de>,
+{
+    fn deserialize_as<D>(deserializer: D) -> Result<Vec<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        IfIsHumanReadable::<_VecSkipError<U>, Same>::deserialize_as(deserializer)
+    }
+}
+
+// Actual implementation of [`MapSkipError`](crate::MapSkipError)
+// Assumes that the deserializer is human-readable.
+struct _MapSkipError<K, V>(PhantomData<(K, V)>);
+
 struct MapSkipErrorVisitor<MAP, K, KAs, V, VAs>(PhantomData<(MAP, K, KAs, V, VAs)>);
 
 impl<'de, MAP, K, KAs, V, VAs> Visitor<'de> for MapSkipErrorVisitor<MAP, K, KAs, V, VAs>
@@ -120,7 +141,7 @@ macro_rules! map_impl {
         $with_capacity:expr
     ) => {
         impl<'de, K, V, KAs, VAs $(, $typaram)*> DeserializeAs<'de, $ty<K, V $(, $typaram)*>>
-            for MapSkipError<KAs, VAs>
+            for _MapSkipError<KAs, VAs>
         where
             KAs: DeserializeAs<'de, K>,
             VAs: DeserializeAs<'de, V>,
@@ -139,6 +160,25 @@ macro_rules! map_impl {
                     VAs,
                 >(PhantomData))
             }
+        }
+
+        impl<'de, K, V, KAs, VAs $(, $typaram)*> DeserializeAs<'de, $ty<K, V $(, $typaram)*>>
+            for MapSkipError<KAs, VAs>
+        where
+            K: Deserialize<'de>,
+            V: Deserialize<'de>,
+            KAs: DeserializeAs<'de, K>,
+            VAs: DeserializeAs<'de, V>,
+            $(K: $kbound1 $(+ $kbound2)*,)?
+            $($typaram: $bound1 $(+ $bound2)*),*
+        {
+            fn deserialize_as<D>(deserializer: D) -> Result<$ty<K, V $(, $typaram)*>, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                IfIsHumanReadable::<_MapSkipError<KAs, VAs>, Same>::deserialize_as(deserializer)
+            }
+
         }
     };
 }
